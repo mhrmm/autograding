@@ -57,34 +57,25 @@ class ScriptRunner(InteractiveRunner):
         else:
             importlib.__import__(self.name)
 
-class MainRunner(InteractiveRunner):
-    
-    def __init__(self, name):
-        InteractiveRunner.__init__(self, name)
-
-    def _start_interaction(self):
-        self._import_script()   
-        
-    def _import_script(self):
-        """ 
-        Runs a script 'name.py', even if it has been
-        imported before
-        """
-        if self.name in sys.modules:
-            importlib.reload(sys.modules[self.name])
-        else:
-            importlib.__import__(self.name)
-        
-#    def _start_interaction(self):\
-#        exec(open(self.name + ".py").read())
-        
 
 def run_script(name, inputs):
-    #output = ScriptRunner(name).run(inputs)
-    #if output == '':
-    output = MainRunner(name).run(inputs)
-    return output
+    return ScriptRunner(name).run(inputs)
 
+def call_function(module, name, args):
+    func = getfunction(module, name)
+    new_stdout = io.StringIO()    
+    try:
+        sys.stdout = new_stdout
+        result = func(*args)
+        output = new_stdout.getvalue()
+    except:
+        result = None
+        output = None
+    finally:
+        # Restore stdout.
+        sys.stdout = sys.__stdout__  
+    return (result, output)
+    
 
 class TestInput:
     def __init__(self, arglist, private):
@@ -177,6 +168,39 @@ class FunctionTest(Problem):
         self.session.set_score(max(0,self.session.get_prevscore()))
 
 
+class FunctionStdoutTest(Problem):
+    def __init__(self, ta_module_name, student_module_name, function_name, max_score = 20):
+        Problem.__init__(self, max_score)
+        self.max_score = max_score
+        self.function_name = function_name
+        try:
+            self.ta_module = self._import_module(ta_module_name)
+            self.student_module = self._import_module(student_module_name)
+            self.session = Session(self.ta_module, self.student_module)
+            self.session.set_max_score(max_score)
+        except:
+            self._kill_session("An exception was raised while trying to " +
+                "import your file. Did you try running it yourself?")
+        if not self.session.compare():
+            self._kill_session("ERROR: you did not follow the naming " +
+                               "conventions for your functions. Please " +
+                               "look over your work and resubmit.")
+
+                
+    def test(self, inputs, private=False):
+        return self.compare(inputs, private)
+    
+    def compare(self, inputs, private=False):
+        """ 
+        Runs the script on the given inputs and compares the
+        output against the TA's solution. Reports the results.
+        """
+        (_, student_output) = call_function(self.student_module, self.function_name, inputs)  
+        (_, ta_output) = call_function(self.ta_module, self.function_name, inputs)
+        return self.session.compare_logs(student_output, ta_output, inputs, private)
+
+        
+
 class InteractiveTest(Problem):
     def __init__(self, ta_module_name, student_module_name, max_score = 20):
         Problem.__init__(self, max_score)
@@ -193,52 +217,12 @@ class InteractiveTest(Problem):
         Runs the script on the given inputs and compares the
         output against the TA's solution. Reports the results.
         """
-        sess = self.session
         student_output = run_script(self.student_module_name, inputs)  
         ta_output = run_script(self.ta_module_name, inputs)
-        success = False    
-        ins = repr(inputs[0])
-        for s in inputs[1:]:
-            ins = ins + ", " + repr(s)    
-        if not private:
-            if student_output == None:
-                sess.x_log("An error occurred running your script with input "+ins+".")
-            elif student_output != ta_output:
-                sess.x_log("Incorrect output with input "+ins+".") 
-                if len(student_output) > 0 and student_output[-1] != "\n":
-                    sess.x_log("Your output is missing a final end-of-line character.")
-                else:
-                    st_lines = len(student_output.split("\n"))-1
-                    ta_lines = len(ta_output.split("\n"))-1
-                    if st_lines != ta_lines:
-                        sess.x_log("Your transcript had "+str(st_lines)+" lines.")
-                        sess.x_log("Our transcript had "+str(ta_lines)+" lines.")
-                    sess.x_log("----- Your script produced:")
-                    sess.x_log_all(student_output)
-                    sess.x_log("----- The solution script produced:")
-                    sess.x_log_all(ta_output)
-                    sess.x_log("-----")
-            else:
-                success = True
-                sess.x_log("Test with input "+ins+" PASSED!")
-        else:
-            if student_output == None:
-                sess.x_log("An error occurred running your script during one of our tests.")
-            elif student_output != ta_output:
-                sess.x_log("Incorrect output with one of our test inputs.")
-                if len(student_output) == 0 and student_output[-1] != "\n":
-                    sess.x_log("Your output is missing a final end-of-line character.")
-            else:
-                success = True
-                sess.x_log("Test on hidden input PASSED!")    
-        if success:
-            sess.i_log("code on "+ins+" SUCCEEDED.")
-        else:
-            sess.i_log("code on "+ins+" FAILED.")
-        return success
+        return self.session.compare_logs(student_output, ta_output, inputs, private)
 
-        
 
+    
 def listfunction_names(obj):
   '''
   listfunction_names takes an object(e.g: module, class) and returns an array of the function names (strings)
@@ -319,6 +303,8 @@ class Session():
   def get_module_proxy(self):
     return self.hw_proxy
 
+
+
   def test_hw_function(self, name, i, private, the_same=(lambda x,y: x == y)):
     '''
     compares a given submitted function against a correctly implemented
@@ -364,6 +350,50 @@ class Session():
       print(e)
       return False
     return True
+
+
+  def compare_logs(self, student_output, ta_output, inputs, private):
+    success = False    
+    ins = repr(inputs[0])
+    for s in inputs[1:]:
+        ins = ins + ", " + repr(s)    
+    if not private:
+        if student_output == None:
+            self.x_log("An error occurred running your script with input "+ins+".")
+        elif student_output != ta_output:
+            self.x_log("Incorrect output with input "+ins+".") 
+            if len(student_output) > 0 and student_output[-1] != "\n":
+                self.x_log("Your output is missing a final end-of-line character.")
+            else:
+                st_lines = len(student_output.split("\n"))-1
+                ta_lines = len(ta_output.split("\n"))-1
+                if st_lines != ta_lines:
+                    self.x_log("Your transcript had "+str(st_lines)+" lines.")
+                    self.x_log("Our transcript had "+str(ta_lines)+" lines.")
+                self.x_log("----- Your script produced:")
+                self.x_log_all(student_output)
+                self.x_log("----- The solution script produced:")
+                self.x_log_all(ta_output)
+                self.x_log("-----")
+        else:
+            success = True
+            self.x_log("Test with input "+ins+" PASSED!")
+    else:
+        if student_output == None:
+            self.x_log("An error occurred running your script during one of our tests.")
+        elif student_output != ta_output:
+            self.x_log("Incorrect output with one of our test inputs.")
+            if len(student_output) == 0 and student_output[-1] != "\n":
+                self.x_log("Your output is missing a final end-of-line character.")
+        else:
+            success = True
+            self.x_log("Test on hidden input PASSED!")    
+    if success:
+        self.i_log("code on "+ins+" SUCCEEDED.")
+    else:
+        self.i_log("code on "+ins+" FAILED.")
+    return success
+
 
   def _arg_compare(self, ta_obj, hw_obj):
     '''
