@@ -82,6 +82,7 @@ class TestInput:
         self.arglist = arglist
         self.private = private
 
+from copy import deepcopy
 
 class Problem:
 
@@ -90,8 +91,8 @@ class Problem:
         self.session = Session()
     
     def batch_test(self, public_inputs, private_inputs):
-        all_inputs = [TestInput(inp, private=False) for inp in public_inputs]
-        all_inputs += [TestInput(inp, private=True) for inp in private_inputs]
+        all_inputs = [TestInput(deepcopy(inp), private=False) for inp in public_inputs]
+        all_inputs += [TestInput(deepcopy(inp), private=True) for inp in private_inputs]
         n = len(all_inputs)
         success = True
         i = 0
@@ -103,7 +104,28 @@ class Problem:
         else:
             self._give_no_credit()
     
+    def batch_test_io(self, public_inputs, public_outputs, private_inputs, private_outputs):
+        all_inputs = [TestInput(deepcopy(inp), private=False) for inp in public_inputs]
+        all_inputs += [TestInput(deepcopy(inp), private=True) for inp in private_inputs]
+        all_outputs = public_outputs + private_outputs
+        
+        n = len(all_inputs)
+        success = True
+        i = 0
+        while success and i < n:
+            success = self.test_io(all_inputs[i].arglist, all_outputs[i], all_inputs[i].private)
+            i += 1
+        if success:
+            self._give_max_credit()
+        else:
+            self._give_no_credit()
+    
+
+    
     def test(self, inputs, private):
+        raise Exception('Cannot call .test on abstract class Problem.')
+
+    def test_io(self, inputs, output, private):
         raise Exception('Cannot call .test on abstract class Problem.')
     
     def _give_max_credit(self):
@@ -126,6 +148,13 @@ class Problem:
         self.session.set_score(max(0,self.session.get_prevscore()))
 
 
+def manually_grade():
+    session = Session(None, None)
+    session.set_max_score(1)
+    session.set_score(1)
+    session.x_log("Thanks for your submission. Note that this problem will be graded manually.")
+    session.x_log("We will be grading your most recent submission, so feel free to upload new submissions if desired.")
+    return session.finalize()
 
 class FunctionTest(Problem):
 
@@ -133,6 +162,7 @@ class FunctionTest(Problem):
         Problem.__init__(self, max_score)
         self.max_score = max_score
         self.function_name = function_name
+        self.session = None
         try:
             self.ta_module = self._import_module(ta_module_name)
             self.student_module = self._import_module(student_module_name)
@@ -162,8 +192,9 @@ class FunctionTest(Problem):
         return importlib.import_module(name)
     
     def _kill_session(self, error_message):
-        self.session = DeadSession()
-        self.session.set_max_score(self.max_score)
+        if self.session is None:
+            self.session = DeadSession()
+            self.session.set_max_score(self.max_score)
         self.session.x_log(error_message)
         self.session.set_score(max(0,self.session.get_prevscore()))
 
@@ -173,6 +204,8 @@ class FunctionStdoutTest(Problem):
         Problem.__init__(self, max_score)
         self.max_score = max_score
         self.function_name = function_name
+        self.session = None
+        self.session_is_dead = False
         try:
             self.ta_module = self._import_module(ta_module_name)
             self.student_module = self._import_module(student_module_name)
@@ -188,7 +221,10 @@ class FunctionStdoutTest(Problem):
 
                 
     def test(self, inputs, private=False):
-        return self.compare(inputs, private)
+        if not self.session_is_dead:
+            return self.compare(inputs, private)
+        else:
+            return False
     
     def compare(self, inputs, private=False):
         """ 
@@ -197,9 +233,70 @@ class FunctionStdoutTest(Problem):
         """
         (_, student_output) = call_function(self.student_module, self.function_name, inputs)  
         (_, ta_output) = call_function(self.ta_module, self.function_name, inputs)
-        return self.session.compare_logs(student_output, ta_output, inputs, private)
+        if student_output == None:
+            self.session.x_log("An error occurred running your script on input {}.".format(inputs))
+            return False
+        else:
+            student_output = ' '.join(student_output.strip().split())
+            ta_output = ' '.join(ta_output.strip().split())
+            return self.session.compare_logs(student_output, ta_output, inputs, private)
+ 
+    def _kill_session(self, error_message):
+        if self.session is None:
+            self.session = DeadSession()
+            self.session.set_max_score(self.max_score)
+        self.session.x_log(error_message)
+        self.session.set_score(max(0,self.session.get_prevscore()))
+        self.session_is_dead = True
 
         
+
+class InterfaceTest(Problem):
+    def __init__(self, client_module_name, function_name, max_score = 20):
+        Problem.__init__(self, max_score)
+        self.max_score = max_score
+        self.function_name = function_name
+        self.session = None
+        self.session_is_dead = False
+        try:
+            self.client_module = self._import_module(client_module_name)
+            self.session = Session(self.client_module, self.client_module)
+            self.session.set_max_score(max_score)
+        except:
+            self._kill_session("An exception was raised while trying to " +
+                "import your file. Did you try running it yourself?")
+        if not self.session.compare():
+            self._kill_session("ERROR: you did not follow the naming " +
+                               "conventions for your functions. Please " +
+                               "look over your work and resubmit.")
+
+                
+    def test_io(self, inputs, output, private=False):
+        if not self.session_is_dead:
+            return self.compare(inputs, output)
+        else:
+            return False
+    
+    def compare(self, inputs, ta_output, private=False):
+        """ 
+        Runs the script on the given inputs and compares the
+        output against the TA's solution. Reports the results.
+        """
+        (_, student_output) = call_function(self.client_module, self.function_name, inputs)          
+        if student_output is not None:
+            student_output = ' '.join(student_output.strip().split())
+        ta_output = ' '.join(ta_output.strip().split())
+        return self.session.compare_logs(student_output, ta_output, inputs, private)
+ 
+    def _kill_session(self, error_message):
+        if self.session is None:
+            self.session = DeadSession()
+            self.session.set_max_score(self.max_score)
+        self.session.x_log(error_message)
+        self.session.set_score(max(0,self.session.get_prevscore()))
+        self.session_is_dead = True
+
+
 
 class InteractiveTest(Problem):
     def __init__(self, ta_module_name, student_module_name, max_score = 20):
@@ -279,6 +376,16 @@ def find_tabs(module):
         return False
 
 
+def arglist_str(arglist):
+  def format_str(s):
+      if str(s) == s:
+          return '"' + s + '"'
+      else:
+          return str(s)
+  arglist = [format_str(s) for s in arglist]
+  return '(' + ','.join(arglist) + ')'
+
+
 class Session():
   '''
   Session object: a session object takes in two modules (a key, or solution module, and a submission module)
@@ -305,6 +412,8 @@ class Session():
 
 
 
+
+
   def test_hw_function(self, name, i, private, the_same=(lambda x,y: x == y)):
     '''
     compares a given submitted function against a correctly implemented
@@ -320,27 +429,31 @@ class Session():
       
       pub_count = 0
       fail = False
+      i_copy1 = deepcopy(i)
+      i_copy2 = deepcopy(i)
       if not private:
-        hw_func_result = hw_func(*i)
-        if the_same(hw_func_result,ta_func(*i)):
+        hw_func_result = hw_func(*i_copy1)
+        if the_same(hw_func_result,ta_func(*i_copy2)):
           pub_count += 1
-          self.i_log("{!s} returned correct result of {!s} on input {!s}.".format(name, str(hw_func_result), str(i)))
+          self.x_log("We called {}{} and it returned the correct result.".format(name, arglist_str(i)))
+          self.i_log("We called {}{} and it returned the correct result.".format(name, arglist_str(i)))
         else:
-          self.x_log("{!s} returned incorrect result of {!s} on input {!s}.".format(name, str(hw_func_result), str(i)))
-          self.i_log("{!s} returned incorrect result of {!s} on input {!s}.".format(name, str(hw_func_result), str(i)))
+          self.x_log("We called {}{} and it returned an INCORRECT result: {}".format(name, arglist_str(i), str(hw_func_result)))
+          self.i_log("We called {}{} and it returned an INCORRECT result: {}".format(name, arglist_str(i), str(hw_func_result)))
           fail = True
           return False
           # break      
       else:
           priv_count = 0
           if not fail:
-              hw_func_result = hw_func(*i)
-              if the_same(hw_func_result,ta_func(*i)):
+              hw_func_result = hw_func(*i_copy1)
+              if the_same(hw_func_result,ta_func(*i_copy2)):
                 priv_count += 1
-                self.i_log("Correct result on input {!s}.".format(str(i)))
+                self.i_log("We called {} on a hidden input and it returned the correct result.".format(name))
+                self.x_log("We called {} on a hidden input and it returned the correct result.".format(name))
               else:
-                self.x_log("Your code ran incorrectly on a private test. Please try again")
-                self.i_log("Incorrect result on input {!s}.".format(str(i)))
+                self.i_log("We called {} on a hidden input and it returned the correct result.".format(name))
+                self.x_log("We called {} on a hidden input and it returned an INCORRECT result.".format(name))
                 return False
                 
            
@@ -353,10 +466,11 @@ class Session():
 
 
   def compare_logs(self, student_output, ta_output, inputs, private):
-    success = False    
-    ins = repr(inputs[0])
-    for s in inputs[1:]:
-        ins = ins + ", " + repr(s)    
+    success = False  
+    ins = ', '.join([repr(inp) for inp in inputs])
+    #ins = repr(inputs[0])
+    #for s in inputs[1:]:
+    #    ins = ins + ", " + repr(s)    
     if not private:
         if student_output == None:
             self.x_log("An error occurred running your script with input "+ins+".")
@@ -438,7 +552,7 @@ class Session():
       missing = ta_top_lvl - hw_top_lvl
       missing_str = ", ".join(str(e) for e in missing)
       self._clog("top_lvl_funcs", "ERROR: some top level function(s) defined in ta-{!s} are missing in submitted-{!s}: {!s}".format(ta_module.__name__, hw_module.__name__, missing_str))
-      self.x_log("You are missing some top level function(s) in {!s}: {!s}".format(hw_module.__name__, missing_str))
+      self.x_log("{!s}.py is missing the following functions: {!s}".format(hw_module.__name__, missing_str))
       all_there = False
 
     #scrape classes from TA_file, hw_file, and compare them
@@ -456,7 +570,7 @@ class Session():
       missing = ta_class_names - hw_class_names
       missing_str = ", ".join(str(e) for e in missing)
       self._clog("classes", "ERROR: some classes defined in ta-{!s} are missing from submitted-{!s}: {!s}".format(ta_module.__name__, hw_module.__name__, missing_str))
-      self.x_log("You are missing some classes in {!s}: {!s}".format(hw_module.__name__, missing_str))
+      self.x_log("{!s}.py is missing the following classes: {!s}".format(hw_module.__name__, missing_str))
       all_there = False
 
     #scrape functions from the common classes:
