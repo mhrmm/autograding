@@ -1,4 +1,4 @@
-from autograding import *
+from autograding import FunctionStdoutTest
 problem = FunctionStdoutTest("ta_hailstone", "hailstone", "hailstone")
 pub_inputs = [(7,), (13,)]
 priv_inputs = [(5000,), (12345678,), (1,)] 
