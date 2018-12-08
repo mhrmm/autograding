@@ -5,92 +5,20 @@ import importlib
 from copy import deepcopy
 from session import Session, DeadSession
 from sanity import compare
+from util import call_function, compare_outputs, compare_functions, ProgramCrash
 
 
-def getfunction(obj, function_name):
-  '''
-  given a function name and an object return the function itself
-  '''
-  f = getattr(obj, function_name)
-  return f
 
-
+ 
 def arglist_str(arglist):
-  def format_str(s):
-      if str(s) == s:
-          return '"' + s + '"'
-      else:
-          return str(s)
-  arglist = [format_str(s) for s in arglist]
-  return '(' + ','.join(arglist) + ')'
-
-
-
-
-
-
-
-def compare_logs(session, student_output, ta_output, inputs, private):
-    success = False  
-    ins = ', '.join([repr(inp) for inp in inputs])
-    if not private:
-        if student_output == None:
-            session.x_log("An error occurred running your script with input "+ins+".")
-        elif student_output != ta_output:
-            session.x_log("Incorrect output with input "+ins+".") 
-            if len(student_output) > 0 and student_output[-1] != "\n":
-                session.x_log("Your output is missing a final end-of-line character.")
-            else:
-                st_lines = len(student_output.split("\n"))-1
-                ta_lines = len(ta_output.split("\n"))-1
-                if st_lines != ta_lines:
-                    session.x_log("Your transcript had "+str(st_lines)+" lines.")
-                    session.x_log("Our transcript had "+str(ta_lines)+" lines.")
-                session.x_log("----- Your script produced:")
-                for line in student_output:
-                    session.x_log(line)
-                session.x_log("----- The solution script produced:")
-                for line in ta_output:
-                    session.x_log(line)
-                session.x_log("-----")
+    def format_str(s):
+        if str(s) == s:
+            return '"' + s + '"'
         else:
-            success = True
-            session.x_log("Test with input "+ins+" PASSED!")
-    else:
-        if student_output == None:
-            session.x_log("An error occurred running your script during one of our tests.")
-        elif student_output != ta_output:
-            session.x_log("Incorrect output with one of our test inputs.")
-            if len(student_output) == 0 and student_output[-1] != "\n":
-                session.x_log("Your output is missing a final end-of-line character.")
-        else:
-            success = True
-            session.x_log("Test on hidden input PASSED!")    
-    if success:
-        session.i_log("code on "+ins+" SUCCEEDED.")
-    else:
-        session.i_log("code on "+ins+" FAILED.")
-    return success
+            return str(s)
+    arglist = [format_str(s) for s in arglist]
+    return '(' + ','.join(arglist) + ')'
 
-
-
-
-
-def call_function(module, name, args):
-    func = getfunction(module, name)
-    new_stdout = io.StringIO()    
-    try:
-        sys.stdout = new_stdout
-        result = func(*args)
-        output = new_stdout.getvalue()
-    except:
-        result = None
-        output = None
-    finally:
-        # Restore stdout.
-        sys.stdout = sys.__stdout__  
-    return (result, output)
-    
 
 class TestInput:
     def __init__(self, arglist, private):
@@ -140,8 +68,8 @@ class Problem:
         raise Exception('Cannot call .test on abstract class Problem.')
 
     def test_io(self, inputs, output, private):
-        raise Exception('Cannot call .test on abstract class Problem.')
-    
+        raise Exception('Cannot call .test_io on abstract class Problem.')
+        
     def _give_max_credit(self):
         self.session.x_log("CONGRATULATIONS! All the tests passed.")
         self.session.set_score(self.max_score)
@@ -191,8 +119,7 @@ class FunctionTest(Problem):
             self._kill_session("ERROR: you did not follow the naming " +
                                "conventions for your functions. Please " +
                                "look over your work and resubmit.")
-
-                
+               
     def test(self, inputs, private=False):
         '''
         compares a given submitted function against a correctly implemented
@@ -202,50 +129,15 @@ class FunctionTest(Problem):
         it to fail. Ive included name for now as an easy way to display the function
         being tested.
         '''
-        session = self.session
-        ta_module = self.ta_module
-        hw_module = self.student_module
-        name = self.function_name
-        i = inputs
-        the_same = lambda x,y: x == y
         try:
-          hw_func = getfunction(hw_module, name)
-          ta_func = getfunction(ta_module, name)
-          
-          pub_count = 0
-          fail = False
-          i_copy1 = deepcopy(i)
-          i_copy2 = deepcopy(i)
-          if not private:
-            hw_func_result = hw_func(*i_copy1)
-            if the_same(hw_func_result,ta_func(*i_copy2)):
-              pub_count += 1
-              session.x_log("We called {}{} and it returned the correct result.".format(name, arglist_str(i)))
-              session.i_log("We called {}{} and it returned the correct result.".format(name, arglist_str(i)))
-            else:
-              session.x_log("We called {}{} and it returned an INCORRECT result: {}".format(name, arglist_str(i), str(hw_func_result)))
-              session.i_log("We called {}{} and it returned an INCORRECT result: {}".format(name, arglist_str(i), str(hw_func_result)))
-              fail = True
-              return False
-          else:
-              priv_count = 0
-              if not fail:
-                  hw_func_result = hw_func(*i_copy1)
-                  if the_same(hw_func_result,ta_func(*i_copy2)):
-                    priv_count += 1
-                    session.i_log("We called {} on a hidden input and it returned the correct result.".format(name))
-                    session.x_log("We called {} on a hidden input and it returned the correct result.".format(name))
-                  else:
-                    session.i_log("We called {} on a hidden input and it returned an INCORRECT result.".format(name))
-                    session.x_log("We called {} on a hidden input and it returned an INCORRECT result.".format(name))
-                    return False
-                    
-               
+            hw_func = getattr(self.student_module, self.function_name)
+            ta_func = getattr(self.ta_module, self.function_name)
+            result = compare_functions(self, ta_func, hw_func, inputs)
+            self.session.notify(result, inputs, private)
+            return result.passedTest()
         except Exception as e:
-          session.x_log("Exception raised while running tests on {!s}. Try testing to see if you can recreate the exception and solve it.".format(name))
-          session.i_log("Exception raised... hopefuly not our fault.")
-          return False
-        return True    
+            self.session.notify(ProgramCrash(e), inputs, private)
+            return False 
     
     def _give_max_credit(self):
         self.session.set_score(self.max_score)
@@ -306,7 +198,9 @@ class FunctionStdoutTest(Problem):
         else:
             student_output = ' '.join(student_output.strip().split())
             ta_output = ' '.join(ta_output.strip().split())
-            return compare_logs(self.session, student_output, ta_output, inputs, private)
+            result = compare_outputs(student_output, ta_output)
+            self.session.notify(result, inputs, private)
+            return result.passedTest()
  
     def _kill_session(self, error_message):
         if self.session is None:
@@ -353,7 +247,9 @@ class InterfaceTest(Problem):
         if student_output is not None:
             student_output = ' '.join(student_output.strip().split())
         ta_output = ' '.join(ta_output.strip().split())
-        return compare_logs(self.session, student_output, ta_output, inputs, private)
+        result = compare_outputs(student_output, ta_output)
+        self.session.notify(result, inputs, private)
+        return result.passedTest()
  
     def _kill_session(self, error_message):
         if self.session is None:
@@ -383,7 +279,9 @@ class InteractiveTest(Problem):
         """
         student_output = InteractiveTest.run_script(self.student_module_name, inputs)  
         ta_output = InteractiveTest.run_script(self.ta_module_name, inputs)
-        return compare_logs(self.session, student_output, ta_output, inputs, private)
+        result = compare_outputs(student_output, ta_output)
+        self.session.notify(result, inputs, private)
+        return result.passedTest()
 
     @staticmethod
     def run_script(name, inputs):
