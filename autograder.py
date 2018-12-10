@@ -5,7 +5,7 @@ import json
 import datetime
 import inspect
 from util import call_function, compare_outputs, compare_functions
-from util import ProgramCrash, InterfaceDiscrepancy
+from result import ProgramCrash, InterfaceDiscrepancy
 from sanity import compare
 
 
