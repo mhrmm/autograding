@@ -12,7 +12,16 @@ from sanity import compare
 DATA_FILE = 'data.json'
 
 class Autograder:
-
+    """
+    An Autograder (formerly called a "session") runs a series of
+    test cases on a student program submission.
+    
+    It initializes itself from a persistent JSON file (the DATA_FILE constant) 
+    that stores the number of previous attempts and best previous attempt 
+    (among other things).
+    
+    """
+    
     def __init__(self, max_score = 20):
         self.max_score = max_score
         self.start_time = datetime.datetime.now().strftime(
@@ -30,7 +39,8 @@ class Autograder:
             self.data = { "attempts": 1, "prevscore": 0, "timedelta": 0 } 
         self.set_max_score(max_score)
     
-    def run(self, tests):               
+    def run(self, tests):  
+        """Runs a sequence of TestCases until one fails."""             
         success = True
         i = 0
         while success and i < len(tests):
@@ -56,6 +66,7 @@ class Autograder:
 
 
     def notify(self, test_result, test):
+        """Records a TestResult in the log."""
         if test.private():
             self.x_log("Running on a hidden test.")
         else:
@@ -65,25 +76,20 @@ class Autograder:
 
 
     def get_attempts(self):
-        '''
-        get_attempts returns the number of attempts on this problem / problem set
-        '''
+        """
+        Returns the number of attempts made so far.
+        
+        """
         attempts = self.data['attempts']
         return attempts
 
     def get_timedelta(self):
-        '''
-        gettimedelta returns the 0(on time) or -1 (late) on this 
-        problem / problem set, just a placeholder for now
-        
-        '''
+        """Returns 0 (on time) or -1 (late)."""
         timedelta = self.data['timedelta']
         return timedelta
 
     def get_prevscore(self):
-        '''
-        get_prevscore returns the previous score (if any, one this problem)
-        '''
+        """Returns the previous best score (if any)."""
         prevscore = self.data['prevscore']
         return prevscore
 
@@ -121,10 +127,6 @@ class Autograder:
     def get_score(self):
         '''returns the current score'''
         return self._score
-
-    def update_score(self, score_mod):
-        ''' changes the value of self._score by the (int) given '''
-        self._score += score_mod
 
     def finalize(self):
         '''
