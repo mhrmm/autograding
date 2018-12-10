@@ -5,9 +5,11 @@ import json
 import datetime
 import inspect
 from util import call_function, compare_outputs, compare_functions
-from result import ProgramCrash, InterfaceDiscrepancy
+from result import ProgramCrash
 from sanity import compare
 
+        
+DATA_FILE = 'data.json'
 
 class Autograder:
 
@@ -15,14 +17,12 @@ class Autograder:
         self.max_score = max_score
         self.start_time = datetime.datetime.now().strftime(
                 "%A, %d. %B %Y %I:%M:%S%p")
-        self.DATA_DIR = ''
-        self.DATA_FILE = 'data.json'
         self.log = {"info":{}, 
                     "internal_log":[], 
                     "external_log":[], 
                     "score_sum": None, 
                     "max_score": None}
-        submission_data = self.DATA_DIR + self.DATA_FILE
+        submission_data = DATA_FILE
         try:
             with open(submission_data) as data_file: 
                 self.data = json.load(data_file)
@@ -60,7 +60,8 @@ class Autograder:
             self.x_log("Running on a hidden test.")
         else:
             self.x_log("Running test: {}".format(str(test)))
-        self.x_log(str(test_result))
+        for line in str(test_result).split('\n'):
+            self.x_log(line)
 
 
     def get_attempts(self):
@@ -230,12 +231,16 @@ class FunctionTest(TestCaseWithInput):
         try:
             ta_module = self._import_module(self.ta_module_name)
             student_module = self._import_module(self.student_module_name)
+        except Exception as e:
+            return ProgramCrash(e)
+        sanity_check = compare(ta_module, student_module)
+        if not sanity_check.passedTest():
+            return sanity_check
+        try:
             ta_func = getattr(ta_module, self.function_name)            
             student_func = getattr(student_module, self.function_name)
         except Exception as e:
             return ProgramCrash(e)
-        if not compare(ta_module, student_module):
-            return InterfaceDiscrepancy()
         return compare_functions(self, ta_func, 
                                  student_func, self.test_input.arglist)
                 
