@@ -1,5 +1,5 @@
 import inspect
-from util import InterfaceDiscrepancy, CorrectResult
+from result import InterfaceDiscrepancy, CorrectResult
 
 def listfunction_names(obj):
   '''
