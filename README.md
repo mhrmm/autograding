@@ -15,7 +15,7 @@ grading script ```grade.py```, which is relatively short and sweet:
     
 This is testing a function called ```digital_root```, which takes an integer
 as its argument, and is expected to return its "digital root," which is the
-number you get if you iteratively sum the digits until the sum is less than
+number you get if you repeatedly sum the digits until the sum is less than
 10.
 
 The line:
@@ -31,7 +31,8 @@ creates a batch of test cases:
     digital_root(1)
     digital_root(0)
     
-the first two of which are "public," and the last four of which are "private."
+the first two of which are "public" (visible to the student), and the last four
+of which are "private" (not revealed to the student).
 
 The autograder will compare the results of the gold standard ```ta_digital_root.digital_root```
 on the test inputs with the results of the student submission ```digital_root.digital_root```.
