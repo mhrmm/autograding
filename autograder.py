@@ -5,6 +5,7 @@ import json
 import datetime
 import inspect
 from util import call_function, compare_outputs, compare_functions
+from util import argument_signature
 from result import ProgramCrash
 from sanity import compare
 
@@ -67,7 +68,7 @@ class Autograder:
 
     def notify(self, test_result, test):
         """Records a TestResult in the log."""
-        if test.private():
+        if test.is_private():
             self.x_log("Running on a hidden test.")
         else:
             self.x_log("Running test: {}".format(str(test)))
@@ -161,18 +162,6 @@ class Autograder:
 
 
 
-
-
-class TestInput:
-    """
-    A list of input arguments for testing a function. These may optionally
-    be treated as 'private,' which means they will not be shown to the student.
-    
-    """    
-    def __init__(self, arglist, private):
-        self.arglist = arglist
-        self.private = private
-
 class TestCase:    
     """
     A TestCase is an abstract class that represents a single test applied
@@ -181,7 +170,14 @@ class TestCase:
     Examples below include FunctionTest, FunctionStdoutTest, InterfaceTest,
     and InteractiveTest.
     
-    """    
+    """  
+    
+    def __init__(self, private):
+        self.priv = private
+        
+    def is_private(self):
+        return self.priv
+
     def run(self):
         """Abstract method. Runs the test case."""        
         raise NotImplementedError("Cannot call .run() on abstract class.")
@@ -192,21 +188,15 @@ class TestCase:
 
 
 class TestCaseWithInput(TestCase):
-    def __init__(self, test_input):
-        self.test_input = test_input
+    """
+    A TestCaseWithInput is an abstract class that represents a single test
+    case that involves input in some way.
     
-    def private(self):
-        return self.test_input.private
+    """  
+    def __init__(self, test_input, private):
+        TestCase.__init__(self, private)
+        self.test_input = test_input
    
-
-def arglist_str(arglist):
-    def format_str(s):
-        if str(s) == s:
-            return '"' + s + '"'
-        else:
-            return str(s)
-    arglist = [format_str(s) for s in arglist]
-    return '(' + ','.join(arglist) + ')'
 
 
 
@@ -223,8 +213,8 @@ class FunctionTest(TestCaseWithInput):
     
     """        
     def __init__(self, ta_module_name, student_module_name, 
-                 function_name, test_input):
-        TestCaseWithInput.__init__(self, test_input)
+                 function_name, test_input, private):
+        TestCaseWithInput.__init__(self, test_input, private)
         self.ta_module_name = ta_module_name
         self.student_module_name = student_module_name
         self.function_name = function_name
@@ -244,21 +234,22 @@ class FunctionTest(TestCaseWithInput):
         except Exception as e:
             return ProgramCrash(e)
         return compare_functions(self, ta_func, 
-                                 student_func, self.test_input.arglist)
+                                 student_func, self.test_input)
                 
     def __str__(self):
         return '{}{}'.format(
                 self.function_name, 
-                arglist_str(self.test_input.arglist))
+                argument_signature(self.test_input))
 
 
     @staticmethod
     def create_batch(ta_module_name, student_module_name, 
                      function_name, pub_inputs, priv_inputs):
-        inputs = ([TestInput(inp, private=False) for inp in pub_inputs] + 
-                   [TestInput(inp, private=True) for inp in priv_inputs])
-        return [FunctionTest(ta_module_name, student_module_name, 
-                             function_name, inp) for inp in inputs]
+        public = [FunctionTest(ta_module_name, student_module_name, 
+                             function_name, inp, private=False) for inp in pub_inputs]
+        private = [FunctionTest(ta_module_name, student_module_name, 
+                             function_name, inp, private=True) for inp in priv_inputs]
+        return public + private
             
 
 class FunctionStdoutTest(TestCaseWithInput):
@@ -278,12 +269,11 @@ class FunctionStdoutTest(TestCaseWithInput):
     
     """    
     def __init__(self, ta_module_name, student_module_name, 
-                 function_name, inputs):        
-        TestCaseWithInput.__init__(self, inputs)
+                 function_name, test_input, private):        
+        TestCaseWithInput.__init__(self, test_input, private)
         self.ta_module_name = ta_module_name
         self.student_module_name = student_module_name
         self.function_name = function_name
-        self.inputs = inputs
      
     def run(self):
         try:
@@ -293,8 +283,8 @@ class FunctionStdoutTest(TestCaseWithInput):
             student_func = getattr(student_module, self.function_name)
         except Exception as e:
             return ProgramCrash(e)
-        (_, student_output) = call_function(student_func, self.inputs.arglist)  
-        (_, ta_output) = call_function(ta_func, self.inputs.arglist)
+        (_, student_output) = call_function(student_func, self.test_input)  
+        (_, ta_output) = call_function(ta_func, self.test_input)
         if student_output == None:
             return ProgramCrash("An error occurred running {}".format(str(self)))
         else:            
@@ -303,16 +293,16 @@ class FunctionStdoutTest(TestCaseWithInput):
                                    ignore_whitespace_cmp)
     
     def __str__(self):
-        return '{}{}'.format(self.function_name, arglist_str(self.inputs.arglist))
+        return '{}{}'.format(self.function_name, argument_signature(self.test_input))
    
     @staticmethod
     def create_batch(ta_module_name, student_module_name, 
                      function_name, pub_inputs, priv_inputs):
-        inputs = ([TestInput(inp, private=False) for inp in pub_inputs] + 
-                   [TestInput(inp, private=True) for inp in priv_inputs])
-        return [FunctionStdoutTest(ta_module_name, student_module_name, 
-                                   function_name, inp) for inp in inputs]
-            
+        public = [FunctionStdoutTest(ta_module_name, student_module_name, 
+                                   function_name, inp, private=False) for inp in pub_inputs]
+        private = [FunctionStdoutTest(ta_module_name, student_module_name, 
+                                   function_name, inp, private=True) for inp in priv_inputs]        
+        return public + private
          
 class InteractiveTest(TestCaseWithInput):
     """
@@ -334,15 +324,15 @@ class InteractiveTest(TestCaseWithInput):
     
     """    
     
-    def __init__(self, ta_module_name, student_module_name, test_input):
-        TestCaseWithInput.__init__(self, test_input)
+    def __init__(self, ta_module_name, student_module_name, test_input, private):
+        TestCaseWithInput.__init__(self, test_input, private)
         self.ta_module_name = ta_module_name
         self.student_module_name = student_module_name
         
     def __str__(self):
         return '{}.py with input {}'.format(
                 self.student_module_name, 
-                arglist_str(self.test_input.arglist))
+                argument_signature(self.test_input))
 
     def run(self):
         student_output = InteractiveTest.run_script(self.student_module_name, 
@@ -354,7 +344,7 @@ class InteractiveTest(TestCaseWithInput):
     @staticmethod
     def run_script(name, inputs):
         input_string = ""
-        for i in inputs.arglist:
+        for i in inputs:
             input_string += i + "\n"    
         # Set up the input string, and the output buffer.    
         new_stdin = io.StringIO(input_string)
@@ -379,10 +369,11 @@ class InteractiveTest(TestCaseWithInput):
     @staticmethod
     def create_batch(ta_module_name, student_module_name, 
                      pub_inputs, priv_inputs):
-        inputs = ([TestInput(inp, private=False) for inp in pub_inputs] + 
-                   [TestInput(inp, private=True) for inp in priv_inputs])
-        return [InteractiveTest(ta_module_name, student_module_name, inp) 
-                for inp in inputs]
+        public = [InteractiveTest(ta_module_name, student_module_name, inp, private=False) 
+                for inp in pub_inputs]
+        private = [InteractiveTest(ta_module_name, student_module_name, inp, private=True) 
+                for inp in priv_inputs]        
+        return public + private
 
 
 class InterfaceTest(TestCaseWithInput):
@@ -394,14 +385,14 @@ class InterfaceTest(TestCaseWithInput):
     """    
     
     def __init__(self, client_module_name, 
-                 function_name, test_input, ta_output):
-        TestCaseWithInput.__init__(self, test_input)
+                 function_name, test_input, private, ta_output):
+        TestCaseWithInput.__init__(self, test_input, private)
         self.client_module_name = client_module_name
         self.function_name = function_name
         self.ta_output = ta_output
         
     def __str__(self):
-        return '{}'.format(self.test_input.arglist[0])
+        return '{}'.format(self.test_input[0])
             
     def run(self):
         try:
@@ -409,7 +400,7 @@ class InterfaceTest(TestCaseWithInput):
             func = getattr(client_module, self.function_name)
         except Exception as e:
             return ProgramCrash(e)
-        (_, student_output) = call_function(func, self.test_input.arglist)          
+        (_, student_output) = call_function(func, self.test_input)          
         if student_output is not None:
             student_output = ' '.join(student_output.strip().split())
             ta_output = ' '.join(self.ta_output.strip().split())
@@ -420,11 +411,11 @@ class InterfaceTest(TestCaseWithInput):
     @staticmethod
     def create_batch(client_module_name, function_name, pub_inputs, 
                      pub_outputs, priv_inputs, priv_outputs):
-        inputs = ([TestInput(inp, private=False) for inp in pub_inputs] + 
-                   [TestInput(inp, private=True) for inp in priv_inputs])
-        outputs = pub_outputs + priv_outputs
-        return [InterfaceTest(client_module_name, function_name, inp, output) 
-                for (inp, output) in zip(inputs, outputs)]
+        public = [InterfaceTest(client_module_name, function_name, inp, False, output) 
+                for (inp, output) in zip(pub_inputs, pub_outputs)]
+        private = [InterfaceTest(client_module_name, function_name, inp, True, output) 
+                for (inp, output) in zip(priv_inputs, priv_outputs)]
+        return public + private
 
 
         
