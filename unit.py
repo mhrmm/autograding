@@ -15,19 +15,19 @@ class SimpleTestCase(unittest.TestCase):
         pass
 
     def test1(self):
-        result = compare_outputs(self.log1, self.log2)
+        result = compare_outputs(self.log2, self.log1)
         assert str(result) == str(CorrectResult())
 
     def test2(self):
-        result = compare_outputs(self.log1, self.log3)
+        result = compare_outputs(self.log3, self.log1)
         assert str(result) == str(LineDiscrepancy(3, "line3", "line4"))
 
     def test3(self):
-        result = compare_outputs(self.log1, self.log4)
+        result = compare_outputs(self.log4, self.log1)
         assert str(result) == str(LineDiscrepancy(4, None, "line4"))
 
     def test4(self):
-        result = compare_outputs(self.log4, self.log1)
+        result = compare_outputs(self.log1, self.log4)
         assert str(result) == str(LineDiscrepancy(4, "line4", None))
 
  
