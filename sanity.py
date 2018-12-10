@@ -1,4 +1,5 @@
 import inspect
+from util import InterfaceDiscrepancy, CorrectResult
 
 def listfunction_names(obj):
   '''
@@ -9,7 +10,7 @@ def listfunction_names(obj):
   return names
 
 
-def arg_compare(ta_obj, hw_obj, session):
+def arg_compare(ta_obj, hw_obj):
     """
     Determines whether the arguments of two methods are the same.
 
@@ -37,12 +38,11 @@ def arg_compare(ta_obj, hw_obj, session):
         log.append("PASSED@{!s}: {!r} args defined in ta-{!s}. {!r} args in submitted-{!s}".format(func, arg_count, ta_obj.__name__ + "." + func, hw_arg_count, hw_obj.__name__ + "." + func))
       else: 
         log.append("ERROR@{!s}: {!r} args defined in ta-{!s}. {!r} args in submitted-{!s}".format(func, arg_count, ta_obj.__name__ + "." + func, hw_arg_count, hw_obj.__name__ + "." + func))
-        session.x_log("You defined {!r} args in submitted-{!s}, there should be {!r} argument(s)".format(hw_arg_count, hw_obj.__name__ + "." + func, arg_count))
         args_there = False
-    return args_there, log
+    return args_there, '\n'.join(log)
 
 
-def compare(ta_module, hw_module, session):
+def compare(ta_module, hw_module):
     """
      compare() does a basic comparison of two modules (or objects), checking to make sure that all functions and classes
      are defined with the appropriate number of arguments. returns true if so, false otherwise.
@@ -56,22 +56,22 @@ def compare(ta_module, hw_module, session):
         classes = {x[0]:x[1] for x in all_classes}
         return classes
 
-
-
-
     all_there = True #innocent until proven guilty
+
+    result_log = ""
 
     #scrape functions from top level:
     ta_top_lvl = set(listfunction_names(ta_module))
     hw_top_lvl = set(listfunction_names(hw_module))
     if ta_top_lvl <= hw_top_lvl:
-      all_there, log = arg_compare(ta_module, hw_module, session)
+      all_there, log = arg_compare(ta_module, hw_module)
     else:
       #also log the missing ones
       missing = ta_top_lvl - hw_top_lvl
       missing_str = ", ".join(str(e) for e in missing)
-      session.x_log("{!s}.py is missing the following functions: {!s}".format(hw_module.__name__, missing_str))
+      log = "{!s}.py is missing the following functions: {!s}".format(hw_module.__name__, missing_str)
       all_there = False
+    result_log += log
 
     #scrape classes from TA_file, hw_file, and compare them
     hw_class_dict = getclass_dict(hw_module)
@@ -84,7 +84,7 @@ def compare(ta_module, hw_module, session):
     if ta_class_names > hw_class_names:
       missing = ta_class_names - hw_class_names
       missing_str = ", ".join(str(e) for e in missing)
-      session.x_log("{!s}.py is missing the following classes: {!s}".format(hw_module.__name__, missing_str))
+      result_log += "\n{!s}.py is missing the following classes: {!s}".format(hw_module.__name__, missing_str)
       all_there = False
 
     #scrape functions from the common classes:
@@ -100,8 +100,10 @@ def compare(ta_module, hw_module, session):
       else:
         missing = ta_cls_funcs - hw_cls_funcs
         missing_str = ", ".join(str(e) for e in missing)
-        session.x_log("Your class {!s} is missing some functions: {!s}".format(hw_module.__name__ +"." + cls_name, missing_str))
+        result_log += "Your class {!s} is missing some functions: {!s}".format(hw_module.__name__ +"." + cls_name, missing_str)
         all_there = False
 
-    return all_there# -*- coding: utf-8 -*-
-
+    if not all_there:
+        return InterfaceDiscrepancy(result_log)
+    else:
+        return CorrectResult()

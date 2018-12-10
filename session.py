@@ -1,3 +1,4 @@
+"""
 import json
 import datetime
 import inspect
@@ -8,13 +9,9 @@ class Session():
     Session object: a session object takes in two modules (a key, or solution module, and a submission module)
     it stores the results of the compare() function and maintains various logs and score information
     '''
-    def __init__(self, ta_obj=None, hw_obj=None):
+    def __init__(self):
         self.start_time = datetime.datetime.now().strftime(
                 "%A, %d. %B %Y %I:%M:%S%p")
-        if ta_obj:
-            self.ta_obj = ta_obj
-        if hw_obj:
-            self.hw_obj = hw_obj
         self.DATA_DIR = ''
         self.DATA_FILE = 'data.json'
         self.log = {"info":{}, 
@@ -29,12 +26,11 @@ class Session():
         except FileNotFoundError:
             self.data = { "attempts": 1, "prevscore": 0, "timedelta": 0 }
     
-    def notify(self, test_result, inputs, private):
-        if private:
-            self.x_log("Running your script on a hidden input.")
+    def notify(self, test_result, test):
+        if test.private():
+            self.x_log("Running on a hidden test.")
         else:
-            ins = ', '.join([repr(inp) for inp in inputs])
-            self.x_log("Running your script with input " +ins+ ".")
+            self.x_log("Running test: {}".format(str(test)))
         self.x_log(str(test_result))
 
 
@@ -131,15 +127,4 @@ class Session():
                 self.x_log("It looks like you are using tabs in your source code." +
                          "You should configure your editor so it changes tabs to spaces.")
 
-    
-class DeadSession(Session):
-
-    def __init__(self):
-        Session.__init__(self, None, None)
-
-    def compare(self):
-        return True
-    
-    def test_hw_function(self, name, pub_inputs, priv_inputs, the_same=(lambda x,y: x == y)):
-        return False
-
+ """

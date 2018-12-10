@@ -1,0 +1,1 @@
+bash regression.sh | grep "score_sum\": 20" | wc

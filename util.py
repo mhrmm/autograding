@@ -31,6 +31,17 @@ class ProgramCrash(IncorrectResult):
         result = "Exception raised!\n{}".format(str(self.exception))
         return result
 
+class InterfaceDiscrepancy(IncorrectResult):
+    
+    def __init__(self):
+        pass
+        
+    def __str__(self):
+        result = "ERROR: you did not follow the naming conventions for "
+        result += "your functions. Please look over your work and resubmit."
+        return result
+
+
 class LineDiscrepancy(IncorrectResult):
     
     def __init__(self, line_number, expected_line, student_line):
@@ -51,7 +62,7 @@ class ReturnValueDiscrepancy(IncorrectResult):
         self.student_retval = student_retval
         
     def __str__(self):
-        result = "Error!\n".format(self.line_number)
+        result = "Error!\n"
         result += "  We expected: {}\n".format(self.expected_retval)
         result += "  We received: {}".format(self.student_retval)
         return result
@@ -63,21 +74,20 @@ def compare_outputs(student_output, ta_output, line_eq = lambda x, y: x==y):
     ta_lines = [line.strip() for line in ta_output.split('\n')]
     for (i, (student_line, ta_line)) in enumerate(zip(student_lines, ta_lines)):
         if not line_eq(student_line, ta_line):
-            return LineDiscrepancy(i+1, student_line, ta_line)    
+            return LineDiscrepancy(i+1, ta_line, student_line)    
     if len(student_lines) > len(ta_lines):
-        return LineDiscrepancy(len(ta_lines) + 1, 
-                                        student_lines[len(ta_lines)], 
-                                        None)
+        return LineDiscrepancy(len(ta_lines) + 1,
+                               None,
+                               student_lines[len(ta_lines)])
     elif len(student_lines) < len(ta_lines):
         return LineDiscrepancy(len(student_lines) + 1, 
-                                        None, 
-                                        ta_lines[len(student_lines)])
+                               ta_lines[len(student_lines)],
+                               None)
     return CorrectResult()
 
 
 
-def call_function(module, name, args):
-    func = getattr(module, name)
+def call_function(func, args):
     new_stdout = io.StringIO()    
     try:
         sys.stdout = new_stdout
